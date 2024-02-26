@@ -1,1 +1,1 @@
-testing github through Jira
+testing github through Jira.
