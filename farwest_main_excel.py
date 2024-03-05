@@ -4,6 +4,7 @@ Created on Thu Feb  1 12:43:09 2024
 @author: aadi
 """
 
+
 import cv2
 import threading
 import time
@@ -16,6 +17,23 @@ from collections import defaultdict  # For creating a dictionary with default va
 import supervision as sv  # For counting unique objects in detection results
 import numpy as np
 import json
+
+from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
+from google.oauth2 import service_account
+
+
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+SERVICE_ACCOUNT_FILE = 'keys.json' #replace with the key file name that you downloaded
+
+creds = None
+creds = service_account.Credentials.from_service_account_file(
+        SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+
+# The ID and range of a sample spreadsheet.
+SPREADSHEET_ID = "11o-ZoNmn4-FdCHd0gJuZMrUC-3mYFgo2EheHKIJfhvE" #Give the ID of the Google spreadsheet
+
+
 
 # Add YOLOv5 folder to the sys.path
 yolov5_path = "../yolov5_farwest"   # Adjust as needed
@@ -45,6 +63,7 @@ if response_as_bbox:
     augment = False
 else:
     ct = {0: 0, 1: 0, 2: 0, 3: 0}
+    
 current_frame = None  # Variable to store the current frame for processing
 frame_lock = threading.Lock()  # Lock for thread-safe operations on the current frame
 stop_threads = False  # Flag to control the stopping of threads
@@ -68,17 +87,47 @@ def count_first_items(matrix, counts):
                 counts[int(first_item)] += 1
     return counts
 
-def append_to_excel(file_path, data_dict):
-    # Current timestamp in the format "dd-mm-yyyy HH:MM"
-    current_timestamp = datetime.now().strftime("%d-%m-%Y %H:%M")
-    data_dict_with_timestamp = {'time-stamp': current_timestamp, **data_dict}
-    df_new = pd.DataFrame([data_dict_with_timestamp])
-    if os.path.exists(file_path):
-        df_existing = pd.read_excel(file_path)
-        df_updated = pd.concat([df_existing, df_new], ignore_index=True)
-    else:
-        df_updated = df_new
-    df_updated.to_excel(file_path, index=False)
+
+# def append_to_excel(file_path, data_dict):
+#     # Current timestamp in the format "dd-mm-yyyy HH:MM"
+#     current_timestamp = datetime.now().strftime("%d-%m-%Y %H:%M")
+#     data_dict_with_timestamp = {'time-stamp': current_timestamp, **data_dict}
+#     df_new = pd.DataFrame([data_dict_with_timestamp])
+#     if os.path.exists(file_path):
+#         df_existing = pd.read_excel(file_path)
+#         df_updated = pd.concat([df_existing, df_new], ignore_index=True)
+#     else:
+#         df_updated = df_new
+#     df_updated.to_excel(file_path, index=False)
+    
+
+def append_data(my_dict):
+    
+    current_timestamp = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+    # Extract and sort the values based on their keys
+    value = [value for key, value in sorted(my_dict.items())]
+    value.insert(0, current_timestamp)
+    value = [value] # has to be 2d array
+    
+    try:
+        start = time.time()
+        service = build("sheets", "v4", credentials=creds)
+        sheet = service.spreadsheets()
+        
+        result = (
+            sheet.values()
+            .append(spreadsheetId=SPREADSHEET_ID, range="camera!A1", 
+                    valueInputOption="USER_ENTERED",
+                    insertDataOption="INSERT_ROWS",
+                    body = {"values": value})
+            .execute()
+        )
+        
+        end = time.time()
+        print("time taken to append data to google sheet : ", end-start)
+    except HttpError as err:
+        print(err)
+        
 
 def read_frames(cap):
     global current_frame, stop_threads
@@ -189,27 +238,25 @@ def send_image(video_path):
     # if not data_appended:  # Check if there's unappended data before exiting
     if response_as_bbox:
         print(dict(ct))
-        append_to_excel(excel_file_path, dict(ct))
+        # append_to_excel(excel_file_path, dict(ct))
+        append_data(dict(ct))
         print("Final counts appended to Excel file.")
-        # for class_id, count in dict(ct).items():
-        #     print(f'{model.names[class_id]}: {count}')
         if if_cloud == True:
             json_string = json.dumps(dict(ct))
             
     else:
         print(check)
-        append_to_excel(excel_file_path, check)
+        # append_to_excel(excel_file_path, check)
+        append_data(check)
         print("Final counts appended to Excel file.")
         if if_cloud == True:
-            json_string = json.dumps(check)
-        
-    
+            json_string = json.dumps(check)    
 
     stop_threads = True
     cap.release()
 
 # Paths
-video_path = "../recycle_small_test_slow.mp4"
-excel_file_path = "../count_result.xlsx"
+# excel_file_path = "../count_result.xlsx"
+video_path = "C:/Users/user/Downloads/recycle_small_test_slow.mp4"
 
 send_image(video_path)
