@@ -21,6 +21,8 @@ ultralytics>=8.0.147
 # aditya's added
 supervision
 google-api-python-client
+google-auth-httplib2 
+google-auth-oauthlib
 
 # Logging ---------------------------------------------------------------------
 # tensorboard>=2.4.1

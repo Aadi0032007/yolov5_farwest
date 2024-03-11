@@ -72,12 +72,15 @@ total_duration = 0
 sv_cons_frames = 4 # Number of consecutive frames to consider an object as detected
 # KMP_DUPLICATE_LIB_OK=TRUE
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
+os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp"
+
 
 def unflatten(input_string):
     values = input_string.split(',')
     first_value = values[0]
     grouped_values = [values[i:i+3] for i in range(1, len(values), 3)]
     return first_value, grouped_values
+
 
 def count_first_items(matrix, counts):
     for inner_list in matrix:
@@ -88,27 +91,20 @@ def count_first_items(matrix, counts):
     return counts
 
 
-# def append_to_excel(file_path, data_dict):
-#     # Current timestamp in the format "dd-mm-yyyy HH:MM"
-#     current_timestamp = datetime.now().strftime("%d-%m-%Y %H:%M")
-#     data_dict_with_timestamp = {'time-stamp': current_timestamp, **data_dict}
-#     df_new = pd.DataFrame([data_dict_with_timestamp])
-#     if os.path.exists(file_path):
-#         df_existing = pd.read_excel(file_path)
-#         df_updated = pd.concat([df_existing, df_new], ignore_index=True)
-#     else:
-#         df_updated = df_new
-#     df_updated.to_excel(file_path, index=False)
-    
-
 def append_data(my_dict):
-    
     current_timestamp = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-    # Extract and sort the values based on their keys
-    value = [value for key, value in sorted(my_dict.items())]
-    value.insert(0, current_timestamp)
-    value = [value] # has to be 2d array
+    # Initialize value list with zeros for keys 0, 1, 2, 3
+    value = [0, 0, 0, 0]
     
+    # Update the value list based on keys present in my_dict
+    for key in range(4):  # Assuming keys are 0, 1, 2, 3
+        if key in my_dict:
+            value[key] = my_dict[key]
+    
+    # Insert the current_timestamp at the beginning of the value list
+    value.insert(0, current_timestamp)
+    value = [value]  # Ensure it is a 2D list to match the API requirement
+
     try:
         start = time.time()
         service = build("sheets", "v4", credentials=creds)
@@ -119,15 +115,15 @@ def append_data(my_dict):
             .append(spreadsheetId=SPREADSHEET_ID, range="camera!A1", 
                     valueInputOption="USER_ENTERED",
                     insertDataOption="INSERT_ROWS",
-                    body = {"values": value})
+                    body={"values": value})
             .execute()
         )
         
         end = time.time()
-        print("time taken to append data to google sheet : ", end-start)
+        # print("Time taken to append data to Google Sheet: ", end - start)
     except HttpError as err:
         print(err)
-        
+
 
 def read_frames(cap):
     global current_frame, stop_threads
@@ -141,6 +137,7 @@ def read_frames(cap):
             break
         with frame_lock:
             current_frame = frame
+
 
 def detect_and_display():
     """
@@ -216,47 +213,91 @@ def detect_and_display():
             frame_counter += 1            
 
             # print(f"Received response for frame {frame_counter}: ", response_msg)
-            print(f"Duration for this frame: {duration:.3f} seconds")
-            print ("==================================")
+            # print(f"Duration for this frame: {duration:.3f} seconds")
+            # print ("==================================")
 
 
 def send_image(video_path):
+   
     global stop_threads, ct
-    cap = cv2.VideoCapture(video_path)
+    cap = cv2.VideoCapture(video_path,cv2.CAP_FFMPEG)
     if not cap.isOpened():
-        print("Error: Could not open video file.")
+        print("Error: Could not open stream.")
         return
 
+    # Starting threads for reading frames and detecting objects
     thread_read = threading.Thread(target=read_frames, args=(cap,))
     thread_detect = threading.Thread(target=detect_and_display)
     thread_read.start()
     thread_detect.start()
 
-    thread_read.join()
-    thread_detect.join()
+    last_save_time = time.time()
 
-    # if not data_appended:  # Check if there's unappended data before exiting
-    if response_as_bbox:
-        print(dict(ct))
-        # append_to_excel(excel_file_path, dict(ct))
-        append_data(dict(ct))
-        print("Final counts appended to Excel file.")
-        if if_cloud == True:
-            json_string = json.dumps(dict(ct))
+    try:
+        while not stop_threads:
+            if keyboard.is_pressed('esc'):  # Allow manual interruption
+                stop_threads = True
+
+            current_time = time.time()
+            if current_time - last_save_time >= 3600:  # Check if an hour has passed
+                if response_as_bbox:
+                    print(dict(ct))
+                    append_data(dict(ct))
+                    print("Hourly counts appended to Google Sheets.")
+                    if if_cloud == True:
+                        json_string = json.dumps(dict(ct))
+                    # Reset the counts
+                    ct.clear()
+                    
+                else:
+                    print(check)
+                    append_data(check)
+                    print("Hourly counts appended to Google Sheets.")
+                    if if_cloud == True:
+                        json_string = json.dumps(check)
+                    # Reset the counts
+                    ct = {0: 0, 1: 0, 2: 0, 3: 0}
+                
+                
+                last_save_time = current_time
+
+            time.sleep(1)  # Sleep to reduce CPU usage
+
+    except KeyboardInterrupt:
+        stop_threads = True
+
+    finally:
+        
+        if response_as_bbox:
+            print(dict(ct))
+            append_data(dict(ct))
+            if if_cloud == True:
+                json_string = json.dumps(dict(ct))
+            # Reset the counts
+            ct.clear()
             
-    else:
-        print(check)
-        # append_to_excel(excel_file_path, check)
-        append_data(check)
-        print("Final counts appended to Excel file.")
-        if if_cloud == True:
-            json_string = json.dumps(check)    
+        else:
+            print(check)
+            append_data(check)
+            if if_cloud == True:
+                json_string = json.dumps(check)
+            # Reset the counts
+            ct = {0: 0, 1: 0, 2: 0, 3: 0}
+        
+        last_save_time = current_time
+        
+        thread_read.join()
+        thread_detect.join()
+        cap.release()
 
-    stop_threads = True
-    cap.release()
 
-# Paths
-# excel_file_path = "../count_result.xlsx"
-video_path = "C:/Users/user/Downloads/recycle_small_test_slow.mp4"
+def main():
+    # Paths
+    video_path = "rtsp://:8554/"
+    # Append options to force the use of TCP
+    video_path_tcp = video_path + "?transport=tcp"
+    # video_path = "../recycle_small_test_slow.mp4"
+    send_image(video_path_tcp)
 
-send_image(video_path)
+if __name__ == "__main__":
+    main()
