@@ -72,7 +72,6 @@ total_duration = 0
 sv_cons_frames = 4 # Number of consecutive frames to consider an object as detected
 # KMP_DUPLICATE_LIB_OK=TRUE
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
-os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp"
 
 
 def unflatten(input_string):
@@ -294,10 +293,8 @@ def send_image(video_path):
 def main():
     # Paths
     video_path = "rtsp://:8554/"
-    # Append options to force the use of TCP
-    video_path_tcp = video_path + "?transport=tcp"
     # video_path = "../recycle_small_test_slow.mp4"
-    send_image(video_path_tcp)
+    send_image(video_path)
 
 if __name__ == "__main__":
     main()
