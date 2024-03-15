@@ -28,10 +28,24 @@ sys.path.append(yolov5_path)
 
 # we will probably want to load these from a local file and not
 # push this type of information to the github
-client = MlflowClient()
-rmodel_name = "REGISTEREDMODELNAME"                        # replace with registered model for deployment
-mlflow.set_tracking_uri('http://SERVERIP:MLFLOWPORT')      # replace with server ip
-model = client.get_registered_model(rmodel_name)
+
+
+model_name = "testingAPI"
+uri = "http://76.144.70.64:5000"
+version = 1
+
+'''
+client = MlflowClient(uri)
+model = client.get_registered_model(model_name)
+'''
+
+mlflow.set_tracking_uri(uri)
+model = mlflow.pyfunc.load_model(f'models:/{model_name}/{version}')
+#model = mlflow.pytorch.load_model(f'models:/{model_name}/{model_version}')
+
+
+
+
 
 # Import custom detection functions from the YOLOv5 implementation
 from detect import run, load_model
@@ -46,6 +60,8 @@ device = "CPU"  # Specify the device to use for inference ('CPU' or 'GPU')
 
 # Load the YOLO model with the specified parameters
 model, stride, names, pt = load_model(weights=weights, device=device)
+
+
 
 # Initialize variables for frame processing and detection counts
 ct = {0: 0, 1: 0, 2: 0, 3: 0}  # Dictionary to count detected objects by category
@@ -165,5 +181,5 @@ def send_image(video_path):
     cap.release()
     
 # Paths and parameters for video processing
-video_path = "C:/Users/user/Downloads/recycle_small_test_slow.mp4"
+video_path = "./ground_truth_2.mp4"
 send_image(video_path)
